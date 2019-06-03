@@ -28,6 +28,7 @@ import (
 	"github.com/argoproj/argo/errors"
 	wfv1 "github.com/argoproj/argo/pkg/apis/workflow/v1alpha1"
 	"github.com/argoproj/argo/pkg/client/clientset/versioned/typed/workflow/v1alpha1"
+	"github.com/argoproj/argo/util/event"
 	"github.com/argoproj/argo/util/file"
 	"github.com/argoproj/argo/util/retry"
 	"github.com/argoproj/argo/workflow/common"
@@ -343,6 +344,18 @@ func (woc *wfOperationCtx) persistUpdates() {
 	// Failing to do so means we can have inconsistent state.
 	for podName := range woc.completedPods {
 		woc.controller.completedPods <- fmt.Sprintf("%s/%s", woc.wf.ObjectMeta.Namespace, podName)
+	}
+
+	// Notify the completed workflow
+	if woc.wf.ObjectMeta.Labels[common.LabelKeyCompleted] == "true" {
+		wfInfo := map[string]string{}
+		wfInfo["status"] = string(woc.wf.Status.Phase)
+		wfInfo["message"] = woc.wf.Status.Message
+		statusData, err := json.Marshal(wfInfo)
+		if err != nil {
+			woc.log.Warnf("Error publishing workflow status: %v", err)
+		}
+		event.Send(fmt.Sprintf("argo-wf-%s/%s", woc.wf.ObjectMeta.Namespace, woc.wf.ObjectMeta.Name), string(statusData))
 	}
 }
 
